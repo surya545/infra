@@ -1,0 +1,87 @@
+pipeline {
+    agent any
+    environment {
+        AWS_ACCESS_KEY_ID = credentials('AWS_ACCESS_KEY_ID')
+        AWS_SECRET_ACCESS_KEY = credentials('AWS_SECRET_ACCESS_KEY')
+        AWS_DEFAULT_REGION = "ap-south-1"
+    }
+    stages {
+        stage('Checkout SCM'){
+            steps{
+                script{
+                    checkout scmGit(branches: [[name: '*/main']], extensions: [], userRemoteConfigs: [[url: 'https://github.com/surya545/infra.git']])
+                }
+            }
+        }
+        stage('Initializing Terraform'){
+            steps{
+                script{
+                    dir('eks-cluster'){
+                        sh 'terraform init'
+                    }
+                }
+            }
+        }
+        stage('Formatting Terraform Code'){
+            steps{
+                script{
+                    dir('eks-cluster'){
+                        sh 'terraform fmt'
+                    }
+                }
+            }
+        }
+        stage('Validating Terraform'){
+            steps{
+                script{
+                    dir('eks-cluster'){
+                        sh 'terraform validate'
+                    }
+                }
+            }
+        }
+        stage('Previewing the Infra using Terraform'){
+            steps{
+                script{
+                    dir('eks-cluster'){
+                        sh 'terraform plan'
+                    }
+                    input(message: "Are you sure to proceed?", ok: "Proceed")
+                }
+            }
+        }
+        stage('Creating/Destroying an EKS Cluster'){
+            steps{
+                script{
+                    dir('eks-cluster') {
+                        sh 'terraform $action --auto-approve'
+                    }
+                }
+            }
+        }
+        stage('Creating/Destroying an EKS Cluster'){
+            steps{
+                script{
+                    def changes = sh(script: 'git diff --name-only HEAD^', returnStdout: true).trim()
+                    if (changes.contains('message-service/app.py') || changes.contains('message-service/requirements.txt') ||  changes.contains('message-service/Dockerfile')){
+                        dir('message-service') {
+                            sh 'docker build -t message-service:latest .'
+                            sh 'aws ecr-public get-login-password --region us-east-1 | docker login --username AWS --password-stdin public.ecr.aws/XXXXX'
+                            sh 'docker tag message-service:latest public.ecr.aws/XXXXX/message-service:latest'
+                            sh 'docker push public.ecr.aws/XXXXX/message-service:latest'
+                            sh 'aws eks update-kubeconfig --name my-eks-cluster'
+                            sh 'kubectl apply -f .'
+                        }
+                    }
+                    else{
+                        dir('message-service') {
+                            sh 'aws eks update-kubeconfig --name my-eks-cluster'
+                            sh 'kubectl apply -f .'
+                        }
+                    }
+                }
+            }
+        }
+
+    }
+}

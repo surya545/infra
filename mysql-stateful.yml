@@ -1,0 +1,58 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: mysql-production
+  namespace: plivo-task
+spec:
+  serviceName: "mysql"
+  replicas: 1  # Adjust the number of replicas based on your production needs
+  updateStrategy:
+    type: RollingUpdate
+  selector:
+    matchLabels:
+      app: mysql-production
+  template:
+    metadata:
+      labels:
+        app: mysql-production
+    spec:
+      securityContext:
+        fsGroup: 1001  # Use a non-root user for the MySQL container
+      containers:
+      - name: mysql
+        image: mysql:latest
+        env:
+        - name: MYSQL_ROOT_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: mysql-secret
+              key: root-password
+        - name: MYSQL_DATABASE
+          valueFrom:
+            secretKeyRef:
+              name: mysql-secret
+              key: database-name
+        - name: MYSQL_USER
+          valueFrom:
+            secretKeyRef:
+              name: mysql-secret
+              key: user
+        - name: MYSQL_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: mysql-secret
+              key: password
+        ports:
+        - containerPort: 3306
+        volumeMounts:
+        - name: mysql-storage
+          mountPath: /var/lib/mysql
+  volumeClaimTemplates:
+  - metadata:
+      name: mysql-storage
+    spec:
+      accessModes: [ "ReadWriteOnce" ]
+      resources:
+        requests:
+          storage: 1Gi  # Adjust the storage size based on your production needs
+      storageClassName: sc-local  # Use the appropriate storage class for your EKS cluster

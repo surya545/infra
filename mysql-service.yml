@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: mysql-production
+  namespace: plivo-task
+  labels:
+    app: mysql-production
+spec:
+  selector:
+    app: mysql-production
+  ports:
+    - protocol: TCP
+      port: 3306
+      targetPort: 3306
+  clusterIP: None  # Headless service for StatefulSet

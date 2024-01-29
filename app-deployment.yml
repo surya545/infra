@@ -1,0 +1,87 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: flask-app-deployment
+  namespace: plivo-task
+  labels:
+    app: flask-app
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: flask-app
+  template:
+    metadata:
+      labels:
+        app: flask-app
+    spec:
+      containers:
+      - name: flask-app
+        image: public.ecr.aws/w4c8k0a7/message-service:v1.0  # Replace with your Flask app image
+        imagePullPolicy: IfNotPresent 
+        volumeMounts:
+        - name: log-volume
+          mountPath: /logs
+        ports:
+          - containerPort: 5000
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 5000
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          successThreshold: 1
+        env:
+        - name: DB_HOST
+          value: mysql-production
+        - name: DB_USER
+          valueFrom:
+            secretKeyRef:
+              name: mysql-secret
+              key: user
+        - name: DB_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: mysql-secret
+              key: password
+        - name: DB_NAME
+          valueFrom:
+            secretKeyRef:
+              name: mysql-secret
+              key: database-name
+        - name: DB_PORT
+          value: "3306"
+
+      - name: fluentd-sidecar
+        image: public.ecr.aws/w4c8k0a7/fluentd:v1.0
+        imagePullPolicy: IfNotPresent 
+        volumeMounts:
+        - name: log-volume
+          mountPath: /logs
+      terminationGracePeriodSeconds: 30
+      volumes:
+      - name: log-volume
+        emptyDir: {}
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: fluentdconf
+  namespace: plivo-task
+data:
+  fluent.conf: |
+    <source>
+      @type tail
+      path /logs/*.log
+      pos_file /var/log/fluentd.log.pos
+      tag kubernetes.*
+      read_from_head true
+      <parse>
+        @type json
+      </parse>
+    </source>
+
+    <match kubernetes.**>
+      @type stdout
+    </match>
